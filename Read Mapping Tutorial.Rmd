@@ -1,0 +1,501 @@
+---
+title: "Read Mapping Tutorial"
+author: "Arianna Kazemi"
+date: "3/26/2020"
+output: html_document
+---
+Adapted from: [datacarpentry](https://datacarpentry.org/wrangling-genomics).
+
+The data are from a long term evolution experiment with <em>E. coli</em>. 
+
+A population was propagated for more than 40,000 generations in a glucose-limited minimal medium (in most conditions glucose is the best carbon source for E. coli, providing faster growth than other sugars). This medium was supplemented with citrate, which E. coli cannot metabolize in the aerobic conditions of the experiment. Sequencing of the populations at regular time points revealed that spontaneous citrate-using variant (Cit+) appeared between 31,000 and 31,500 generations, causing an increase in population size and diversity. In addition, this experiment showed hypermutability in certain regions. Hypermutability is important and can help accelerate adaptation to novel environments, but also can be selected against in well-adapted populations.
+
+We will be working with three sample events from the Ara-3 strain of this experiment, one from 5,000 generations, one from 15,000 generations, and one from 50,000 generations. The population changed substantially during the course of the experiment, and we will be exploring how (the evolution of a Cit+ mutant and hypermutability) with our variant calling workflow.
+
+Here is the pipeline:
+
+![Pipeline](https://datacarpentry.org/wrangling-genomics/img/variant_calling_workflow.png)
+
+1. Quality Control - Assessing quality using FastQC
+2. Quality control - Trimming and/or filtering reads (if necessary)
+3. Align reads to reference genome
+4. Perform post-alignment clean-up
+5. Variant calling
+
+## Getting the Data
+To access the files necessary for the tutorial, go to the Our Microbiome Drive > Presentations > Lab Meeting > Read Mapping Materials. If you would like to download the data directly, you can use the following commands:
+
+```
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/004/SRR2589044/SRR2589044_1.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/004/SRR2589044/SRR2589044_2.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/003/SRR2584863/SRR2584863_1.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/003/SRR2584863/SRR2584863_2.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/006/SRR2584866/SRR2584866_1.fastq.gz
+curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/006/SRR2584866/SRR2584866_2.fastq.gz
+```
+
+I saved the files to a directory called workshop.
+
+## 1- FASTQ
+The obtained files are gzipped FASTQ files which contain quality information about the sequences. Each base is given a PHRED score between 0 and 41. Quality scores are logarithmically based, so a quality score of 10 reflects a base call accuracy of 90%, but a quality score of 20 reflects a base call accuracy of 99%. These probability values depend on how much signal was captured.
+
+We will use FastQC to visualize the quality of our reads.
+
+Check that FastQC works by running:
+
+```
+fastqc -h
+```
+If it is working, the help menu should output.
+
+To run FastQC on all the files, run the following in the directory with your .fastq files:
+
+```
+fastqc *.fastq* 
+```
+A successful run will output (for example):
+
+```
+Analysis complete for SRR2589044_2.fastq.gz
+```
+### Looking at visual outputs
+For each input FASTQ file, FastQC has created a .zip file and a .html file. The .html file is a webpage displaying the summary report for each sample.
+
+For organization, move the .html and .zip files to a new directory (results/fastqc_untrimmed_reads/).
+
+```
+mkdir -p /results/fastqc_untrimmed_reads/
+mv *.zip /results/fastqc_untrimmed_reads/ 
+mv *.html /results/fastqc_untrimmed_reads/ 
+
+```
+
+To view the FastQC results, we have to move the .html files to your computer, since the .html files cannot be opened on the MGHPCC. Make a directory on your Desktop called fastqc_html:
+
+```
+mkdir -p ~/Desktop/fastqc_html 
+```
+
+Then, in a NEW TERMINAL WINDOW (not logged into the MGHPCC), copy the html files to the created folder:
+
+```
+scp ak44a@ghpcc06.umassrc.org:~/workshop/results/fastqc_untrimmed_reads/*.html ~/Desktop/fastqc_html
+```
+
+The first part of the command (ak44a@ghpcc06.umassrc.org) is the address for your remote computer. 
+
+The second part starts with a : and then gives the absolute path of the files you want to transfer from your remote computer. Don’t forget the :. A wildcard (*.html) indicates that we want all of the HTML files.
+
+The third part of the command gives the absolute path of the location you want to put the files. This is on your local computer and is the directory we just created ~/Desktop/fastqc_html.
+
+Once the files have transferred, click on one .html file and it should open in your browser. Here's what they mean:
+
+<ul>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/2%20Per%20Base%20Sequence%20Quality.html"><strong>Per base sequence quality</strong></a>: The x-axis displays the base position in the read, and the y-axis shows quality scores. For each position, there is a box-and-whisker plot showing the distribution of quality scores for all reads at that position. </li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/12%20Per%20Tile%20Sequence%20Quality.html"><strong>Per tile sequence quality</strong></a>: the machines that perform sequencing are divided into tiles. This plot displays patterns in base quality along these tiles. Consistently low scores are often found around the edges, but hot spots can also occur in the middle if an air bubble was introduced at some point during the run.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/3%20Per%20Sequence%20Quality%20Scores.html"><strong>Per sequence quality scores</strong></a>: a density plot of quality for all reads at all positions. This plot shows what quality scores are most common.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/4%20Per%20Base%20Sequence%20Content.html"><strong>Per base sequence content</strong></a>: plots the proportion of each base position over all of the reads. Typically, we expect to see each base roughly 25% of the time at each position, but this often fails at the beginning or end of the read due to quality or adapter content.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/5%20Per%20Sequence%20GC%20Content.html"><strong>Per sequence GC content</strong></a>: a density plot of average GC content in each of the reads.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/6%20Per%20Base%20N%20Content.html"><strong>Per base N content</strong></a>: the percent of times that ‘N’ occurs at a position in all reads. If there is an increase at a particular position, this might indicate that something went wrong during sequencing.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/7%20Sequence%20Length%20Distribution.html"><strong>Sequence Length Distribution</strong></a>: the distribution of sequence lengths of all reads in the file. If the data is raw, there is often on sharp peak, however if the reads have been trimmed, there may be a distribution of shorter lengths.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/8%20Duplicate%20Sequences.html"><strong>Sequence Duplication Levels</strong></a>: A distribution of duplicated sequences. In sequencing, we expect most reads to only occur once. If some sequences are occurring more than once, it might indicate enrichment bias (e.g. from PCR). If the samples are high coverage (or RNA-seq or amplicon), this might not be true.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/9%20Overrepresented%20Sequences.html"><strong>Overrepresented sequences</strong></a>: A list of sequences that occur more frequently than would be expected by chance.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/10%20Adapter%20Content.html"><strong>Adapter Content</strong></a>: a graph indicating where adapater sequences occur in the reads.</li>
+  <li><a href="https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/11%20Kmer%20Content.html"><strong>K-mer Content</strong></a>: a graph showing any sequences which may show a positional bias within the reads.</li>
+</ul>
+
+### Looking at text outputs
+Back on the MGHPCC, we have a bunch of zipped fastqc files. To unzip them all, use a for loop:
+
+```
+for filename in *.zip
+> do
+> unzip $filename
+> done
+```
+
+Once it is complete, we can try
+```
+ls -F
+```
+to see the newly created folders and
+```
+ls -F SRR2584863_1_fastqc/ 
+```
+to look inside these folders.
+
+You should see:
+fastqc_data.txt  fastqc.fo  fastqc_report.html	Icons/	Images/  summary.txt
+
+To look inside the summary folder run:
+```
+less SRR2584863_1_fastqc/summary.txt 
+```
+
+You should see:
+
+PASS    Basic Statistics        SRR2584863_1.fastq </br>
+PASS    Per base sequence quality       SRR2584863_1.fastq </br>
+PASS    Per tile sequence quality       SRR2584863_1.fastq </br>
+PASS    Per sequence quality scores     SRR2584863_1.fastq </br>
+WARN    Per base sequence content       SRR2584863_1.fastq </br>
+WARN    Per sequence GC content SRR2584863_1.fastq </br>
+PASS    Per base N content      SRR2584863_1.fastq </br>
+PASS    Sequence Length Distribution    SRR2584863_1.fastq </br>
+PASS    Sequence Duplication Levels     SRR2584863_1.fastq </br>
+PASS    Overrepresented sequences       SRR2584863_1.fastq </br>
+WARN    Adapter Content SRR2584863_1.fastq </br>
+
+Press q to quit the summary.
+
+## Trimming and Filtering
+We will now use trimmomatic on our files to remove the lower quality sequences we saw after using FastQC.
+
+Check that trimmomatic works by running:
+
+```
+java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.ja -h
+```
+If it is working, the help menu should output.
+
+Go back to the untrimmed_fastq directory. These are paired end samples with Nextera adapters (short nucleotide sequences which bind DNA fragments to be sequenced/undergo PCR) . The adapter sequences came with the installation of trimmomatic, so we will first copy these sequences into our current directory.
+
+```
+cp /share/pkg/trimmomatic/0.32/adapters/NexteraPE-PE.fa
+```
+
+A sliding window of size 4 that will remove bases if their phred score is below 20 . We will also discard any reads that do not have at least 25 bases remaining after this trimming step.
+
+```
+java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.ja PE SRR2589044_1.fastq.gz SRR2589044_2.fastq.gz \
+                SRR2589044_1.trim.fastq.gz SRR2589044_1un.trim.fastq.gz \
+                SRR2589044_2.trim.fastq.gz SRR2589044_2un.trim.fastq.gz \
+                SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:NexteraPE-PE.fa:2:40:15 
+```
+
+This command can be broken down to:
+
+<table>
+  <thead>
+    <tr>
+      <th>code</th>
+      <th>meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">PE</code></td>
+      <td>paired end reads</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SRR2589044_1.fastq.gz and SRR2589044_2.fastq.gz </code></td>
+      <td>input files</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SRR2589044_1.trim.fastq.gz and SRR2589044_2.trim.fastq.gz</code></td>
+      <td>the output files for surviving pairs</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SRR2589044_1un.trim.fastq.gz and SRR2589044_2un.trim.fastq.gz </code></td>
+      <td>the output files for orphaned reads</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">ILLUMINACLIP:NexteraPE-PE.fa:2:40:15</code></td>
+      <td>clip the Nextera adapters from the input file using the adapter sequences listed. The 2 specifies the maximum mismatch count which will still allow a full
+match to be performed, the 40 specifies how accurate the match between the two 'adapter
+ligated' reads must be for PE palindrome read alignment, and the 15 specifies how accurate the match between any adapter sequence must be against a read.</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">SLIDINGWINDOW:4:20</code></td>
+      <td>to use a sliding window of size 4 that will remove bases if their phred score is below 20</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">MINLEN:25</code></td>
+      <td>Drop an entire read if it is below 25 bases</td>
+    </tr>
+  </tbody>
+</table>
+
+
+To run all samples at once (trimmomatic can only do one at a time), we need another for loop:
+```
+for infile in *_1.fastq.gz
+> do
+>   base=$(basename ${infile} _1.fastq.gz)
+>   trimmomatic PE ${infile} ${base}_2.fastq.gz \
+>                ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz \
+>                ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz \
+>                SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:NexteraPE-PE.fa:2:40:15 
+> done
+```
+
+We can move the results once done to a new folder:
+```
+ cd ~/workshop/data/untrimmed_fastq
+ mkdir ../trimmed_fastq
+ mv *.trim* ../trimmed_fastq
+ cd ../trimmed_fastq
+ ls
+```
+
+## Alignment to reference genome
+Now that we have looked at our data to make sure that it is high quality, and removed low-quality base calls, we can perform variant calling to see how the population changed over time. We care how this population changed relative to the original population, E. coli strain REL606. Therefore, we will align each of our samples to the E. coli REL606 reference genome, and see what differences exist in our reads versus the genome.
+
+
+First, we need to download the reference genome:
+```
+cd ~/workshop
+mkdir -p data/ref_genome
+curl -L -o data/ref_genome/ecoli_rel606.fasta.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/017/985/GCA_000017985.1_ASM1798v1/GCA_000017985.1_ASM1798v1_genomic.fna.gz
+gunzip data/ref_genome/ecoli_rel606.fasta.gz
+```
+
+You will also need to create directories for the results that will be generated as part of this workflow.
+
+```
+mkdir -p results/sam results/bam results/bcf results/vcf
+```
+
+### Indexing the genome
+Our first step is to index the reference genome for use by the Burrows Wheeler Aligner (BWA) Indexing allows the aligner to quickly find potential alignment sites for query sequences in a genome, which saves time during alignment. 
+
+```
+bwa index data/ref_genome/ecoli_rel606.fasta
+```
+
+### Align reads
+The alignment process consists of choosing an appropriate reference genome to map our reads against and then deciding on an aligner. 
+
+```
+bwa mem data/ref_genome/ecoli_rel606.fasta data/trimmed_fastq_small/SRR2584866_1.trim.sub.fastq data/trimmed_fastq_small/SRR2584866_2.trim.sub.fastq > results/sam/SRR2584866.aligned.sam
+```
+
+This command can be broken down to:
+
+<table>
+  <thead>
+    <tr>
+      <th>code</th>
+      <th>meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">mem</code></td>
+      <td>the chosen algorithm</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">data/ref_genome/ecoli_rel606.fasta</code></td>
+      <td>the reference genome</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">data/trimmed_fastq_small/SRR2584866_1/2.trim.sub.fastq</code></td>
+      <td>the files to be aligned to the reference genome</td>
+    </tr>
+    <tr>
+      <td><code class="language-plaintext highlighter-rouge">results/sam/SRR2584866.aligned.sam</code></td>
+      <td>the output file</td>
+    </tr>
+  </tbody>
+</table>
+
+### SAM/BAM
+The SAM file is a tab-delimited text file that contains information for each individual read and its alignment to the genome.
+The compressed binary version of SAM is called a BAM file. We use this version to reduce size and to allow for indexing, which enables efficient random access of the data contained within the file.
+
+We will convert the SAM file to BAM format using the samtools program with the view command and tell this command that the input is in SAM format (-S) and to output BAM format (-b):
+
+```
+samtools view -S -b results/sam/SRR2584866.aligned.sam > results/bam/SRR2584866.aligned.bam
+```
+
+Next we sort the BAM file using the sort command from samtools. -o tells the command where to write the output.
+
+SAM/BAM files can be sorted in multiple ways, e.g. by location of alignment on the chromosome, by read name, etc. It is important to be aware that different alignment tools will output differently sorted SAM/BAM, and different downstream tools require differently sorted alignment files as input.
+
+```
+samtools sort -o results/bam/SRR2584866.aligned.sorted.bam results/bam/SRR2584866.aligned.bam
+```
+
+### Variant Calling
+A variant call is a conclusion that there is a nucleotide difference vs. some reference at a given position in an individual genome or transcriptome, often referred to as a Single Nucleotide Polymorphism (SNP). The call is usually accompanied by an estimate of variant frequency and some measure of confidence.
+
+#### 1) Calculate the read coverage of positions in the genome
+Count read coverage with bcftools. We will use the command mpileup, which summarizes the coverage of mapped reads. The flag -O b tells bcftools to generate a bcf format output file, -o specifies where to write the output file, and -f flags the path to the reference genome:
+
+```
+bcftools mpileup -O b -o results/bcf/SRR2584866_raw.bcf \
+-f data/ref_genome/ecoli_rel606.fasta results/bam/SRR2584866.aligned.sorted.bam 
+```
+We have now generated a file with coverage information for every base.
+
+#### 2) Detect the single nucleotide polymorphisms (SNPs)
+Identify SNPs using bcftools call. We have to specify ploidy with the flag --ploidy, which is one for the haploid E. coli. -m allows for multiallelic and rare-variant calling, -v tells the program to output variant sites only (not every site in the genome), and -o specifies where to write the output file:
+
+```
+bcftools call --ploidy 1 -m -v -o results/bcf/SRR2584866_variants.vcf results/bcf/SRR2584866_raw.bcf 
+```
+
+#### 3) Filter and report the SNP variants in variant calling format (VCF)
+
+```
+ vcfutils.pl varFilter results/bcf/SRR2584866_variants.vcf  > results/vcf/SRR2584866_final_variants.vcf
+ ```
+
+
+## Looking at results
+```
+less -S results/vcf/SRR2584866_final_variants.vcf
+```
+
+<div class="language-plaintext output highlighter-rouge"><div class="highlight"><pre class="highlight"><code>#CHROM  POS     ID      REF     ALT     QUAL    FILTER  INFO    FORMAT  results/bam/SRR2584866.aligned.sorted.bam
+CP000819.1      1521    .       C       T       207     .       DP=9;VDB=0.993024;SGB=-0.662043;MQSB=0.974597;MQ0F=0;AC=1;AN=1;DP4=0,0,4,5;MQ=60
+CP000819.1      1612    .       A       G       225     .       DP=13;VDB=0.52194;SGB=-0.676189;MQSB=0.950952;MQ0F=0;AC=1;AN=1;DP4=0,0,6,5;MQ=60
+CP000819.1      9092    .       A       G       225     .       DP=14;VDB=0.717543;SGB=-0.670168;MQSB=0.916482;MQ0F=0;AC=1;AN=1;DP4=0,0,7,3;MQ=60
+CP000819.1      9972    .       T       G       214     .       DP=10;VDB=0.022095;SGB=-0.670168;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,2,8;MQ=60      GT:PL
+CP000819.1      10563   .       G       A       225     .       DP=11;VDB=0.958658;SGB=-0.670168;MQSB=0.952347;MQ0F=0;AC=1;AN=1;DP4=0,0,5,5;MQ=60
+CP000819.1      22257   .       C       T       127     .       DP=5;VDB=0.0765947;SGB=-0.590765;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,2,3;MQ=60      GT:PL
+CP000819.1      38971   .       A       G       225     .       DP=14;VDB=0.872139;SGB=-0.680642;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,4,8;MQ=60      GT:PL
+CP000819.1      42306   .       A       G       225     .       DP=15;VDB=0.969686;SGB=-0.686358;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,5,9;MQ=60      GT:PL
+CP000819.1      45277   .       A       G       225     .       DP=15;VDB=0.470998;SGB=-0.680642;MQSB=0.95494;MQ0F=0;AC=1;AN=1;DP4=0,0,7,5;MQ=60
+CP000819.1      56613   .       C       G       183     .       DP=12;VDB=0.879703;SGB=-0.676189;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,8,3;MQ=60      GT:PL
+CP000819.1      62118   .       A       G       225     .       DP=19;VDB=0.414981;SGB=-0.691153;MQSB=0.906029;MQ0F=0;AC=1;AN=1;DP4=0,0,8,10;MQ=59
+CP000819.1      64042   .       G       A       225     .       DP=18;VDB=0.451328;SGB=-0.689466;MQSB=1;MQ0F=0;AC=1;AN=1;DP4=0,0,7,9;MQ=60      GT:PL
+</code></pre></div></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>column</th>
+      <th>info</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CHROM</td>
+      <td>contig location where the variation occurs</td>
+    </tr>
+    <tr>
+      <td>POS</td>
+      <td>position within the contig where the variation occurs</td>
+    </tr>
+    <tr>
+      <td>ID</td>
+      <td>a <code class="language-plaintext highlighter-rouge">.</code> until we add annotation information</td>
+    </tr>
+    <tr>
+      <td>REF</td>
+      <td>reference genotype (forward strand)</td>
+    </tr>
+    <tr>
+      <td>ALT</td>
+      <td>sample genotype (forward strand)</td>
+    </tr>
+    <tr>
+      <td>QUAL</td>
+      <td>Phred-scaled probability that the observed variant exists at this site (higher is better)</td>
+    </tr>
+    <tr>
+      <td>FILTER</td>
+      <td>a <code class="language-plaintext highlighter-rouge">.</code> if no quality filters have been applied, PASS if a filter is passed, or the name of the filters this variant failed</td>
+    </tr>
+  </tbody>
+</table>
+
+
+
+For the last two columns:
+
+
+<table>
+  <thead>
+    <tr>
+      <th>metric</th>
+      <th>definition</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>GT</td>
+      <td>the genotype of this sample which for a diploid genome is encoded with a 0 for the REF allele, 1 for the first ALT allele, 2 for the second and so on. So 0/0 means homozygous reference, 0/1 is heterozygous, and 1/1 is homozygous for the alternate allele. For a diploid organism, the GT field indicates the two alleles carried by the sample, encoded by a 0 for the REF allele, 1 for the first ALT allele, 2 for the second ALT allele, etc.</td>
+    </tr>
+    <tr>
+      <td>PL</td>
+      <td>the likelihoods of the given genotypes</td>
+    </tr>
+    <tr>
+      <td>GQ</td>
+      <td>the Phred-scaled confidence for the genotype</td>
+    </tr>
+    <tr>
+      <td>AD, DP</td>
+      <td>the depth per allele by sample and coverage</td>
+    </tr>
+  </tbody>
+</table>
+
+## Visualization
+In order for us to visualize the alignment files, we will need to index the BAM file using samtools:
+
+```
+samtools index results/bam/SRR2584866.aligned.sorted.bam
+```
+
+Samtools implements a very simple text alignment viewer based on the GNU ncurses library, called tview. This alignment viewer works with short indels and shows MAQ consensus. It uses different colors to display mapping quality or base quality, subjected to users’ choice. 
+
+```
+samtools tview results/bam/SRR2584866.aligned.sorted.bam data/ref_genome/ecoli_rel606.fasta
+```
+
+<div class="language-plaintext output highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1         11        21        31        41        51        61        71        81        91        101       111       121
+AGCTTTTCATTCTGACTGCAACGGGCAATATGTCTCTGTGTGGATTAAAAAAAGAGTGTCTGATAGCAGCTTCTGAACTGGTTACCTGCCGTGAGTAAATTAAAATTTTATTGACTTAGGTCACTAAATAC
+..................................................................................................................................
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, ..................N................. ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,........................
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, ..................N................. ,,,,,,,,,,,,,,,,,,,,,,,,,,,.............................
+...................................,g,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ....................................   ................
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,....................................   ....................................      ,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ....................................  ,,a,,,,,,,,,,,,,,,,,,,,,,,,,,,,,     .......
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, .............................  ,,,,,,,,,,,,,,,,,g,,,,,    ,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ...........................T.......   ,,,,,,,,,,,,,,,,,,,,,,,c,          ......
+......................... ................................   ,g,,,,,,,,,,,,,,,,,,,      ...........................
+,,,,,,,,,,,,,,,,,,,,, ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, ,,,,,,,,,,,,,,,,,,,,,,,,,,,       ..........................
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,   ................................T..  ..............................   ,,,,,,
+...........................       ,,,,,,g,,,,,,,,,,,,,,,,,   ....................................         ,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,, ....................................  ...................................        ....
+....................................  ........................  ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,      ....
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,   ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+........................            .................................. .............................     ....
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,   ....................................        ..........................
+...............................       ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, ....................................
+...................................  ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ..................................
+.................................... ,,,,,,,,,,,,,,,,,,a,,,,,,,,,,,,,,,,,        ,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,  ............................ ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+</code></pre></div></div>
+
+The first line of output shows the genome coordinates in our reference genome. The second line shows the reference genome sequence. The third line shows the consensus sequence determined from the sequence reads. A . is for a matching base reverse strand and , is for a matching base forward strand. Capital and lowercase indicate forward and reverse, respectively. 
+
+Below this, we can see all of the reads in our sample aligned with the reference genome. Only positions where the called base differs from the reference are shown. You can use the arrow keys on your keyboard to scroll or type ? for a help menu. To navigate to a specific position, type g. A dialogue box will appear. In this box, type the name of the “chromosome” followed by a colon and the position of the variant you would like to view (e.g. for this sample, type CP000819.1:50 to view the 50th base). Type Ctrl^C or q to exit tview.
+
+### IGV
+IGV must be downloaded locally or accessed on the [web version](https://igv.org/app).
+
+We need to download the aligned and sorted bam files using scp again (make sure to make a directory on your desktop called files_for_igv):
+
+```
+scp ak44a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam ~/Desktop/files_for_igv
+scp ak44a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam.bai ~/Desktop/files_for_igv
+scp ak44a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta ~/Desktop/files_for_igv
+scp ak44a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta.fai ~/Desktop/files_for_igv
+scp ak44a@ghpcc06.umassrc.org:~/workshop/results/vcf/SRR2584866_final_variants.vcf ~/Desktop/files_for_igv
+```
+
+First, load the reference genome (ecoli_rel606.fasta) and index (ecoli_rel606.fasta.fai) under Genome > Local file.
+
+Then, load the bam file (SRR2584866.aligned.sorted.bam) and index (SRR2584866.aligned.sorted.bam.bai) under Tracks > Local File.
+
+Finally, load the vcf file (SRR2584866_final_variants.vcf) under Tracks > Local File.
+
+![IGV](igv.png)
+
+In the VCF track, each bar across the top of the plot shows the allele fraction for a single locus. The second bar shows the genotypes for each locus in each sample. We only have one sample called here, so we only see a single line. Dark blue = heterozygous, Cyan = homozygous variant, Grey = reference. Filtered entries are transparent.
