@@ -1,0 +1,78 @@
+---
+title: "SNP Count Analysis"
+output: html_notebook
+author: "Jeff Blanchard"
+date: "4/24/2020"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library('tidyverse')
+library('broom')
+```
+
+Read in and tidy the data
+
+```{r}
+SNP_counts <- read_csv("SNP_counts.csv") %>% 
+  rename(Genome = X1) %>% 
+  pivot_longer(-c(Genome), names_to = "Sample_ID", values_to = "SNP_count") %>% 
+  separate(Sample_ID, c("Treatment", "Subplot"), sep = "-")
+```
+
+
+Get the pvalue using Welch 
+
+```{r}
+SNP_counts_pvalue <- SNP_counts %>% 
+  group_by(Genome, Treatment) %>% 
+  nest() %>% 
+  spread(key = Treatment, value = data) %>% 
+    mutate(
+    t_test = map2(Control, Heat, ~{t.test(.x$SNP_count, .y$SNP_count) %>%     tidy()}),
+    Control = map(Control, nrow),
+    Heat = map(Heat, nrow)
+    ) %>%
+  unnest(cols = t_test) %>% 
+  rename(Control_Mean = estimate1, Heat_Mean = estimate2, Diff = estimate) %>%
+  select(Genome, Control_Mean, Heat_Mean, Diff, p.value)
+write_csv(metabolite_peaks_pvalue, "SNP_counts_pvalue.csv")
+```
+
+Get the pvalue using student 
+```{r}
+SNP_counts_studentt <- SNP_counts %>% 
+  group_by(Genome, Treatment) %>% 
+  nest() %>% 
+  spread(key = Treatment, value = data) %>% 
+    mutate(
+    t_test = map2(Control, Heat, ~{t.test(.x$SNP_count, .y$SNP_count, var.equal=TRUE) %>%     tidy()}),
+    Control = map(Control, nrow),
+    Heat = map(Heat, nrow)
+    ) %>%
+  unnest(cols = t_test) %>% 
+  rename(Control_Mean = estimate1, Heat_Mean = estimate2) %>%
+  select(Genome, Control_Mean, Heat_Mean, p.value)
+```
+
+
+Box plot
+```{r}
+ggplot(SNP_counts, aes(x=Genome, y=SNP_count))+
+  geom_boxplot(aes(fill=Treatment))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+ 
+  scale_fill_manual(values=treatment_colors, name = 'Treatment', labels = c('Control', 'Heated'))
+
+treatment_colors <- c("#00BFC4", "#F8766D")
+
+ggplot(PHA, aes(x=Layer, y=Count, fill = Treatment)) +
+   geom_dotplot(binaxis = 'y', stackdir = 'center',
+                  position = position_dodge()) +
+   scale_fill_manual(values=treatment_colors)
+```

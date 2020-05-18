@@ -1,0 +1,55 @@
+---
+title: "VCF Quality Assessment"
+author: "Arianna Kazemi"
+date: "5/9/2020"
+output: html_document
+---
+
+```{r}
+library(knitr)
+library(vcfR)
+```
+
+Getting quality info
+
+```{r}
+#load vcf
+vcf <- read.vcfR("../../files_for_igv/IncBWC12O_metag.QC.3300020651.fa.6.fa.final.vcf", verbose = FALSE )
+show(vcf)
+
+#see first variants
+vcf@fix[1:10,1:5]
+
+#look at meta data
+queryMETA(vcf)
+
+#looking at specific Quality info
+queryMETA(vcf, element = "QUAL")
+
+#generate stats
+chrom <- create.chromR(name='RAD_data', vcf=vcf)
+chrom <- proc.chromR(chrom, verbose = TRUE)
+#view quality graphs
+chromoqc(chrom, dp.alpha = 66)
+plot(chrom)
+
+#look at genotype data
+unique(vcf@gt[,1])
+
+#individual variants
+head(chrom@var.info)
+
+#variants/contig 
+head(chrom@win.info)
+
+#extract INFO information and plot
+dp <- extract.info(vcf, element='QUAL', as.numeric=TRUE)
+boxplot(dp, las=3, col=c("#C0C0C0", "#808080"), ylab="Depth", las=2)
+
+
+#quality filter
+chrom_edit <- masker(chrom, min_QUAL=0, min_DP=30, max_DP=650, min_MQ=40, max_MQ=60.5)
+chrom <- proc.chromR(chrom_edit, verbose = TRUE)
+chromoqc(chrom_edit, dp.alpha = 66)
+plot(chrom_edit)
+```

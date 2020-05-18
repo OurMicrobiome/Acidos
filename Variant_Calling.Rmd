@@ -1,0 +1,69 @@
+---
+title: "R Notebook"
+author: "Arianna Kazemi"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+Trim fastq files (in directory with MetaG files):
+
+```
+for file in `dir -d *.fastq.gz` ; do
+  echo "working with file $file"
+  trim=`echo "$file" | sed 's/.fastq.gz/.trim.fastq.gz/'`
+java -jar /usr/share/java/trimmomatic-0.39.jar SE -threads 40 $file ./Trim/$trim ILLUMINACLIP:../TruSeq2-SE.fa:2:40:15  SLIDINGWINDOW:4:20
+done
+```
+
+Map genomes (in directory of HQ genomes). Mapping each sample to each genome:
+
+```
+for genome in `dir -d *fa` ; do
+  for meta in ../../../BHD1/Arianna/MetaG/Trim/*.fastq.gz ; do
+    echo "working with genome $genome and metag $meta" 
+    file=`echo "$meta" | sed 's/.fastq.gz//' | sed 's/..\/..\/..\/BHD1\/Arianna\/MetaG\/Trim\///'`
+    sorted_bam=../../../BHD1/Arianna/MetaG_Results/bam/$file.$genome.sorted.bam
+    
+    bwa mem -t 60 $genome $meta | samtools sort -O bam -T tmp -@ 60 > $sorted_bam
+    echo "now indexing sorted bam $sorted_bam"
+    samtools index $sorted_bam
+
+  done
+done
+```
+
+
+Variant calling pipeline:
+
+```
+for file in `dir -d *bam` ; do
+    genome="$(sed -e 's/.*QC.\(.*\).sorted.*/\1/' <<<"$file")"
+    echo "working with genome $genome" 
+    upfile=`echo "$file" | sed 's/.sorted.bam//'` 
+
+    bcftools mpileup -O b -f ../../../../HD6/Arianna/HQ_genomes/$genome $file -o ../bcf/$upfile.bcf 
+    bcftools call --ploidy 1 -mv -o ../bcf/$upfile.vcf ../bcf/$upfile.bcf
+    /bin/bcftools-1.9/misc/vcfutils.pl varFilter ../bcf/$upfile.vcf > ../vcf/$upfile.final.vcf
+done
+```
+
+
+Load IGV remotely:
+
+```
+ssh -XY genobacter
+igv.sh
+```
+
+Output file comparing the sites in two vcf files:
+
+```
+#gzip and index each vcf file for vcfcompare
+for file in `dir -d *vcf` ; do
+    bgzip $file
+    tabix $file.gz
+done
+vcf-compare $file1 $file2
+```
+

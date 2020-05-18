@@ -1,0 +1,56 @@
+---
+title: "Workflow 5/5"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+Trim MetaT files from JGI (eg: NatBWC12O_metat.fastq.gz)
+```
+for file in `dir -d *.fastq.gz` ; do
+  echo "working with file $file"
+  trim=`echo "$file" | sed 's/.fastq.gz/.trim.fastq.gz/'`
+java -jar /usr/share/java/trimmomatic-0.39.jar SE -threads 40 $file $trim ILLUMINACLIP:../TruSeq2-SE.fa:2:40:15  SLIDINGWINDOW:4:20
+done
+```
+
+Map HQ Genomes (eg: 3300021003.fa.3.fa) and the trimmed MetaT files
+```
+for genome in `dir -d *fa` ; do
+  for meta in ../MetaT/*.trim.fastq.gz ; do
+    echo "working with genome $genome and metat $meta" 
+    file=`echo "$meta" | sed 's/.fastq.gz//' | sed 's/..\/MetaT\///'`
+    echo "$file"
+    sorted_bam=../../../BHD1/Arianna/Results/$file.$genome.sorted.bam
+    echo "$sorted_bam"
+    bwa mem -t 60 $genome $meta | samtools sort -O bam -T tmp -@ 60 > $sorted_bam
+    echo "now indexing sorted bam $sorted_bam"
+    samtools index $sorted_bam
+  done
+done
+```
+
+Then filter aligned reads to 3 quality levels 
+99.9% or mapq of 30
+99% or mapq of 20
+97% or mapq of 15
+
+```
+for file in `dir -d *.sorted.bam` ; do
+  echo "working with file $file"
+  q30=`echo "$file" | sed 's/.sorted.bam/.q30.sorted.bam/'`
+  q20=`echo "$file" | sed 's/.sorted.bam/.q20.sorted.bam/'`
+  q15=`echo "$file" | sed 's/.sorted.bam/.q15.sorted.bam/'`
+  samtools view -q 30 -b $file > $q30
+  samtools view -q 20 -b $file > $q20
+  samtools view -q 15 -b $file > $q15
+done
+```
+
+Collect total read count and aligned read count:
+
+```
+parallel --tag samtools view -c  ::: *.bam > reads.csv
+```
+
+<img src="results.png" />
