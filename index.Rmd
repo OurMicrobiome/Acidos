@@ -1,0 +1,16 @@
+---
+title: "Acidobacteria Ecology and Evolution"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+editor_options: 
+  chunk_output_type: console
+---
+
+
+## html files
+
+* 1 [Read_Mapping_Tutorial](Read_Mapping.nb.html)
+* 2 [Variant_Calling](Variant_Calling.nb.html)
+* 2 [Workflow_5.5](Workflow_5.5.nb.html)
