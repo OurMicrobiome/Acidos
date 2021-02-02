@@ -11,6 +11,6 @@ editor_options:
 
 ## html files
 
-* 1 [Read_Mapping_Tutorial](Read_Mapping.nb.html)
+* 1 [Read_Mapping_Trials](Read_Mapping.nb.html)
 * 2 [Variant_Calling](Variant_Calling.nb.html)
 * 2 [Workflow_5.5](Workflow_5.5.nb.html)
