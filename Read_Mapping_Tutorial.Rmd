@@ -36,13 +36,56 @@ curl -O ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR258/006/SRR2584866/SRR2584866_2.fa
 
 I saved the files to a directory called workshop.
 
+## Running Modules on MGHPCC
+
+Bioinformatics software on the MGHPCC is put into modules which must be loaded before they can be used. To see what modules are availabe run
+
+```
+module avail
+```
+If you need new software installed contact hpc@it.umass.edu 
+
+To load the module with the appropriate version of the software
+
+```
+module load fastqc/0.11.5
+```
+
+To unload a single module
+```
+module unload fastqc
+```
+
+To unload all modules loaded
+```
+module purge 
+```
+### Running software on MGHPCC in interactive mode
+
+You can run modules in interactive or batch mode. For interactive mode (which is fine for this tutorial)
+
+```
+bsub -q interactive -Is bash
+```
+
+For running in batch mode 
+
+```
+bsub -q long hostname
+```
+
+For more details see https://www.umassrc.org/wiki/index.php/GHPCC#Submitting_batch_jobs
+
 ## 1- FASTQ
 The obtained files are gzipped FASTQ files which contain quality information about the sequences. Each base is given a PHRED score between 0 and 41. Quality scores are logarithmically based, so a quality score of 10 reflects a base call accuracy of 90%, but a quality score of 20 reflects a base call accuracy of 99%. These probability values depend on how much signal was captured.
 
 We will use FastQC to visualize the quality of our reads.
 
-Check that FastQC works by running:
+```
+module load fastqc/0.11.5
+```
 
+Check that FastQC works by running:
 ```
 fastqc -h
 ```
@@ -64,9 +107,9 @@ For each input FASTQ file, FastQC has created a .zip file and a .html file. The 
 For organization, move the .html and .zip files to a new directory (results/fastqc_untrimmed_reads/).
 
 ```
-mkdir -p /results/fastqc_untrimmed_reads/
-mv *.zip /results/fastqc_untrimmed_reads/ 
-mv *.html /results/fastqc_untrimmed_reads/ 
+mkdir -p ~/workshop/results/fastqc_untrimmed_reads/ 
+mv *.zip ~/workshop/results/fastqc_untrimmed_reads/ 
+mv *.html ~/workshop/results/fastqc_untrimmed_reads/ 
 
 ```
 
@@ -151,23 +194,26 @@ Press q to quit the summary.
 ## Trimming and Filtering
 We will now use trimmomatic on our files to remove the lower quality sequences we saw after using FastQC.
 
-Check that trimmomatic works by running:
+```
+module load trimmomatic/0.32
+```
+Check that trimmomatic works by running from your 
 
 ```
-java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.ja -h
+java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.jar -h
 ```
 If it is working, the help menu should output.
 
 Go back to the untrimmed_fastq directory. These are paired end samples with Nextera adapters (short nucleotide sequences which bind DNA fragments to be sequenced/undergo PCR) . The adapter sequences came with the installation of trimmomatic, so we will first copy these sequences into our current directory.
 
 ```
-cp /share/pkg/trimmomatic/0.32/adapters/NexteraPE-PE.fa
+cp /share/pkg/trimmomatic/0.32/adapters/NexteraPE-PE.fa NexteraPE-PE.fa
 ```
 
 A sliding window of size 4 that will remove bases if their phred score is below 20 . We will also discard any reads that do not have at least 25 bases remaining after this trimming step.
 
 ```
-java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.ja PE SRR2589044_1.fastq.gz SRR2589044_2.fastq.gz \
+java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.jar PE SRR2589044_1.fastq.gz SRR2589044_2.fastq.gz \
                 SRR2589044_1.trim.fastq.gz SRR2589044_1un.trim.fastq.gz \
                 SRR2589044_2.trim.fastq.gz SRR2589044_2un.trim.fastq.gz \
                 SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:NexteraPE-PE.fa:2:40:15 
@@ -222,19 +268,30 @@ To run all samples at once (trimmomatic can only do one at a time), we need anot
 for infile in *_1.fastq.gz
 > do
 >   base=$(basename ${infile} _1.fastq.gz)
->   trimmomatic PE ${infile} ${base}_2.fastq.gz \
+>   tjava -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.jar ${infile} ${base}_2.fastq.gz \
 >                ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz \
 >                ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz \
 >                SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:NexteraPE-PE.fa:2:40:15 
 > done
 ```
+```
+for infile in *_1.fastq.gz
+ do
+   base=$(basename ${infile} _1.fastq.gz)
+   java -jar -Xmx512m /share/pkg/trimmomatic/0.32/trimmomatic-0.32.jar PE ${infile} ${base}_2.fastq.gz \
+                ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz \
+                ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz \
+                SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:NexteraPE-PE.fa:2:40:15 
+ done
+```
+
 
 We can move the results once done to a new folder:
 ```
- cd ~/workshop/data/untrimmed_fastq
- mkdir ../trimmed_fastq
- mv *.trim* ../trimmed_fastq
- cd ../trimmed_fastq
+
+mkdir -p ~/dc_workshop/results/trimmed_fastq
+mv *.trim* ~/dc_workshop/results/trimmed_fastq
+cd ~/dc_workshop/results/trimmed_fastq
  ls
 ```
 
@@ -243,6 +300,7 @@ Now that we have looked at our data to make sure that it is high quality, and re
 
 
 First, we need to download the reference genome:
+
 ```
 cd ~/workshop
 mkdir -p data/ref_genome
@@ -260,6 +318,12 @@ mkdir -p results/sam results/bam results/bcf results/vcf
 Our first step is to index the reference genome for use by the Burrows Wheeler Aligner (BWA) Indexing allows the aligner to quickly find potential alignment sites for query sequences in a genome, which saves time during alignment. 
 
 ```
+module load bwa/0.7.17
+module load samtools/1.9
+module load bcftools/1.9
+```
+
+```
 bwa index data/ref_genome/ecoli_rel606.fasta
 ```
 
@@ -267,7 +331,7 @@ bwa index data/ref_genome/ecoli_rel606.fasta
 The alignment process consists of choosing an appropriate reference genome to map our reads against and then deciding on an aligner. 
 
 ```
-bwa mem data/ref_genome/ecoli_rel606.fasta data/trimmed_fastq_small/SRR2584866_1.trim.sub.fastq data/trimmed_fastq_small/SRR2584866_2.trim.sub.fastq > results/sam/SRR2584866.aligned.sam
+bwa mem data/ref_genome/ecoli_rel606.fasta results/trimmed_fastq/SRR2584866_1.trim.fastq.gz results/trimmed_fastq/SRR2584866_2.trim.fastq.gz > results/sam/SRR2584866.aligned.sam
 ```
 
 This command can be broken down to:
@@ -304,6 +368,7 @@ The SAM file is a tab-delimited text file that contains information for each ind
 The compressed binary version of SAM is called a BAM file. We use this version to reduce size and to allow for indexing, which enables efficient random access of the data contained within the file.
 
 We will convert the SAM file to BAM format using the samtools program with the view command and tell this command that the input is in SAM format (-S) and to output BAM format (-b):
+
 
 ```
 samtools view -S -b results/sam/SRR2584866.aligned.sam > results/bam/SRR2584866.aligned.bam
@@ -483,11 +548,11 @@ IGV must be downloaded locally or accessed on the [web version](https://igv.org/
 We need to download the aligned and sorted bam files using scp again (make sure to make a directory on your desktop called files_for_igv):
 
 ```
-scp ak44a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam ~/Desktop/files_for_igv
-scp ak44a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam.bai ~/Desktop/files_for_igv
-scp ak44a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta ~/Desktop/files_for_igv
-scp ak44a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta.fai ~/Desktop/files_for_igv
-scp ak44a@ghpcc06.umassrc.org:~/workshop/results/vcf/SRR2584866_final_variants.vcf ~/Desktop/files_for_igv
+scp jb46a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam ~/Desktop/files_for_igv
+scp jb46a@ghpcc06.umassrc.org:~/workshop/results/bam/SRR2584866.aligned.sorted.bam.bai ~/Desktop/files_for_igv
+scp jb46a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta ~/Desktop/files_for_igv
+scp jb46a@ghpcc06.umassrc.org:~/workshop/data/ref_genome/ecoli_rel606.fasta.fai ~/Desktop/files_for_igv
+scp jb46a@ghpcc06.umassrc.org:~/workshop/results/vcf/SRR2584866_final_variants.vcf ~/Desktop/files_for_igv
 ```
 
 First, load the reference genome (ecoli_rel606.fasta) and index (ecoli_rel606.fasta.fai) under Genome > Local file.
@@ -496,6 +561,5 @@ Then, load the bam file (SRR2584866.aligned.sorted.bam) and index (SRR2584866.al
 
 Finally, load the vcf file (SRR2584866_final_variants.vcf) under Tracks > Local File.
 
-![IGV](igv.png)
 
 In the VCF track, each bar across the top of the plot shows the allele fraction for a single locus. The second bar shows the genotypes for each locus in each sample. We only have one sample called here, so we only see a single line. Dark blue = heterozygous, Cyan = homozygous variant, Grey = reference. Filtered entries are transparent.
