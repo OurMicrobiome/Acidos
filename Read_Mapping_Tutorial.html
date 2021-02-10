@@ -9,7 +9,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Arianna Kazemi" />
+<meta name="author" content="Arianna Kazemi with edits by JLB" />
 
 
 <title>Read Mapping Tutorial</title>
@@ -386,7 +386,7 @@ summary {
 
 
 <h1 class="title toc-ignore">Read Mapping Tutorial</h1>
-<h4 class="author">Arianna Kazemi</h4>
+<h4 class="author">Arianna Kazemi with edits by JLB</h4>
 <h4 class="date">3/26/2020</h4>
 
 </div>
@@ -510,6 +510,10 @@ mv *.html ~/workshop/results/fastqc_untrimmed_reads/
 &gt; do
 &gt; unzip $filename
 &gt; done</code></pre>
+<pre><code>for filename in *.zip
+ do
+ unzip $filename
+ done</code></pre>
 <p>Once it is complete, we can try</p>
 <pre><code>ls -F</code></pre>
 <p>to see the newly created folders and</p>
@@ -627,9 +631,9 @@ Drop an entire read if it is below 25 bases
  done</code></pre>
 <p>We can move the results once done to a new folder:</p>
 <pre><code>
-mkdir -p ~/dc_workshop/results/trimmed_fastq
-mv *.trim* ~/dc_workshop/results/trimmed_fastq
-cd ~/dc_workshop/results/trimmed_fastq
+mkdir -p ~/workshop/results/trimmed_fastq
+mv *.trim* ~/workshop/results/trimmed_fastq
+cd ~/workshop/results/trimmed_fastq
  ls</code></pre>
 </div>
 <div id="alignment-to-reference-genome" class="section level2">

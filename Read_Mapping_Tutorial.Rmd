@@ -1,10 +1,11 @@
 ---
 title: "Read Mapping Tutorial"
-author: "Arianna Kazemi"
+author: "Arianna Kazemi with edits by JLB" 
 date: "3/26/2020"
 output: html_document
 ---
 Adapted from: [datacarpentry](https://datacarpentry.org/wrangling-genomics).
+
 
 The data are from a long term evolution experiment with <em>E. coli</em>. 
 
@@ -157,6 +158,12 @@ for filename in *.zip
 > done
 ```
 
+```
+for filename in *.zip
+ do
+ unzip $filename
+ done
+```
 Once it is complete, we can try
 ```
 ls -F
@@ -289,9 +296,9 @@ for infile in *_1.fastq.gz
 We can move the results once done to a new folder:
 ```
 
-mkdir -p ~/dc_workshop/results/trimmed_fastq
-mv *.trim* ~/dc_workshop/results/trimmed_fastq
-cd ~/dc_workshop/results/trimmed_fastq
+mkdir -p ~/workshop/results/trimmed_fastq
+mv *.trim* ~/workshop/results/trimmed_fastq
+cd ~/workshop/results/trimmed_fastq
  ls
 ```
 
@@ -405,7 +412,7 @@ bcftools call --ploidy 1 -m -v -o results/bcf/SRR2584866_variants.vcf results/bc
 
 ```
  vcfutils.pl varFilter results/bcf/SRR2584866_variants.vcf  > results/vcf/SRR2584866_final_variants.vcf
- ```
+```
 
 
 ## Looking at results
@@ -560,6 +567,5 @@ First, load the reference genome (ecoli_rel606.fasta) and index (ecoli_rel606.fa
 Then, load the bam file (SRR2584866.aligned.sorted.bam) and index (SRR2584866.aligned.sorted.bam.bai) under Tracks > Local File.
 
 Finally, load the vcf file (SRR2584866_final_variants.vcf) under Tracks > Local File.
-
 
 In the VCF track, each bar across the top of the plot shows the allele fraction for a single locus. The second bar shows the genotypes for each locus in each sample. We only have one sample called here, so we only see a single line. Dark blue = heterozygous, Cyan = homozygous variant, Grey = reference. Filtered entries are transparent.
